@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import Dashboard from './pages/Dashboard';
 import Verification from './pages/Verification';
-import VerificationQueue from './pages/VerificationQueue';
-import Cases from './pages/Cases';
+import Tenders from './pages/Tenders';
+import DocumentVerification from './pages/DocumentVerification';
+import VendorManagement from './pages/VendorManagement';
+import RiskAnalysis from './pages/RiskAnalysis';
 import Reports from './pages/Reports';
 import AuditTrail from './pages/AuditTrail';
-import Templates from './pages/Templates';
-import Integrations from './pages/Integrations';
+import NotificationsPage from './pages/NotificationsPage';
+import UserManagement from './pages/UserManagement';
 import SettingsPage from './pages/SettingsPage';
-import HelpSupport from './pages/HelpSupport';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import DocumentUploadModal from './components/DocumentUploadModal';
@@ -23,27 +25,28 @@ function MainLayout() {
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans select-none animate-fade-up">
-      {/* Sidebar with Quick Upload Callback */}
+      {/* Sidebar Navigation */}
       <Sidebar onOpenUpload={() => setIsQuickUploadOpen(true)} />
 
-      {/* Main Content Area */}
+      {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header />
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-5 animate-fade-up">
           <Routes>
-            <Route path="/" element={<Navigate to="/verification" replace />} />
-            <Route path="/dashboard" element={<Navigate to="/verification" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/tenders" element={<Tenders />} />
             <Route path="/verification" element={<Verification />} />
-            <Route path="/queue" element={<VerificationQueue />} />
-            <Route path="/cases" element={<Cases />} />
-            <Route path="/templates" element={<Templates />} />
+            <Route path="/documents" element={<DocumentVerification />} />
+            <Route path="/vendors" element={<VendorManagement />} />
+            <Route path="/risk" element={<RiskAnalysis />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/audit" element={<AuditTrail />} />
-            <Route path="/integrations" element={<Integrations />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/users" element={<UserManagement />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/help" element={<HelpSupport />} />
-            <Route path="*" element={<Navigate to="/verification" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>
