@@ -40,7 +40,8 @@ export default function DemoCasesModal({ isOpen, onClose }) {
     if (result && result.analysis) {
       // Fetch demo PDF from demo-data if available
       try {
-        const demoPdfRes = await fetch(`http://localhost:8000/demo-data/${caseId}`);
+        const aiBase = import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000';
+        const demoPdfRes = await fetch(`${aiBase}/demo-data/${caseId}`);
         if (demoPdfRes.ok) {
           const blob = await demoPdfRes.blob();
           const file = new File([blob], `${caseId}_Package.pdf`, { type: "application/pdf" });
