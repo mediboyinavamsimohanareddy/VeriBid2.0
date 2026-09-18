@@ -8,3 +8,11 @@ target/
 .opencode
 reference.jpeg
 ref.png
+__pycache__/
+*.pyc
+spring.log
+spring_err.log
+javac_args.txt
+run_args.txt
+frontend/dist/
+VeriBid_Demo_Dataset_National_Jury_v2.zip

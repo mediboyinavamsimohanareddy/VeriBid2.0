@@ -1,5 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'https://humble-goldfish-px4jp7jrvxjc66pv-8080.app.github.dev/api';
-const AI_SERVICE_BASE = import.meta.env.VITE_AI_SERVICE_URL || 'https://humble-goldfish-px4jp7jrvxjc66pv-8000.app.github.dev';
+const AI_SERVICE_BASE = import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000';
 
 export const isLiveBackendAvailable = async () => {
   try {
@@ -430,4 +430,116 @@ export const uploadDocument = async (caseId, file) => {
 
 export const analyzeFileApi = async (file, caseId = "GEM/2024/B/19102") => {
   return uploadDocument(caseId, file);
+};
+
+export const fetchDemoCases = async () => {
+  try {
+    const res = await fetch(`${AI_SERVICE_BASE}/demo-cases`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn("AI Service /demo-cases note:", e);
+  }
+  return [
+    {
+      case_id: "Case_A_Consistent",
+      title: "Case A — Consistent Bid",
+      bidder_name: "Bharat Network Solutions Private Limited",
+      description: "Complete and mostly matching synthetic bid package with 3 experience certificates and valid financial turnover.",
+      purpose: "Demonstrates normal verification workflow with high compliance score.",
+      notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT"
+    },
+    {
+      case_id: "Case_B_Mismatch_Review",
+      title: "Case B — Mismatch / Review",
+      bidder_name: "ABC Infra Private Limited",
+      description: "Synthetic bid containing legal name variation (GST vs PAN/Udyam) and turnover below requirement.",
+      purpose: "Demonstrates forensic detection and officer review workflow.",
+      notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT"
+    },
+    {
+      case_id: "Case_C_Incomplete",
+      title: "Case C — Incomplete Bid",
+      bidder_name: "Deccan Tech Services Private Limited",
+      description: "Synthetic bid with intentionally missing required financial statement and OEM authorization documents.",
+      purpose: "Demonstrates missing-document detection.",
+      notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT"
+    }
+  ];
+};
+
+export const processDemoCase = async (caseId) => {
+  try {
+    const res = await fetch(`${AI_SERVICE_BASE}/demo-cases/${caseId}/process`, {
+      method: 'POST'
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn("AI Service process demo case note:", e);
+  }
+
+  // Fallback to locally structured result if backend AI service is offline
+  if (caseId.includes("Case_A") || caseId.includes("Consistent")) {
+    return {
+      case_id: "Case_A_Consistent",
+      caseId: "DEMO/2026/B/VERIBID-A001",
+      bidderName: "Bharat Network Solutions Private Limited",
+      statusLabel: "Verification Complete — Compliant Bid",
+      overall_compliance_score: 94,
+      is_demo_data: true,
+      demo_notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT",
+      analysis: {
+        score: 94,
+        counters: { passed: 7, issues: 0, review: 0, total: 7 },
+        clauses: [
+          { id: "3.2.1", clauseNumber: "3.2.1", title: "Average Annual Turnover", category: "Eligibility & Financial", requirement: "Min. ₹ 10.00 Crore", status: "PASSED", requiredValue: "₹ 10.00 Crore", foundValue: "₹ 12.40 Crore", variance: "Compliant (+₹ 2.40 Cr)", documentName: "06_Financial_Statement.pdf", documentFileName: "06_Financial_Statement.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 98, extractedText: "Revenue / Turnover: INR 12.4 Crore", riskLevel: "LOW RISK", issueTitle: "ANNUAL TURNOVER COMPLIANT", whyItMatters: "Exceeds required threshold." },
+          { id: "3.2.2", clauseNumber: "3.2.2", title: "Net Worth", category: "Eligibility & Financial", requirement: "Positive Net Worth", status: "PASSED", requiredValue: "Positive (> ₹ 0)", foundValue: "₹ 3.10 Crore", variance: "Compliant (+₹ 3.10 Cr)", documentName: "06_Financial_Statement.pdf", documentFileName: "06_Financial_Statement.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 98, extractedText: "Net Worth: INR 3.1 Crore", riskLevel: "LOW RISK", issueTitle: "NET WORTH COMPLIANT", whyItMatters: "Positive net worth." },
+          { id: "3.2.3", clauseNumber: "3.2.3", title: "GST Registration", category: "Eligibility & Statutory", requirement: "Valid Active GSTIN", status: "PASSED", requiredValue: "Valid GSTIN", foundValue: "Active GSTIN", variance: "Verified Active", documentName: "04_GST_Certificate.pdf", documentFileName: "04_GST_Certificate.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 99, extractedText: "GSTIN: 99SYNTHA0010X0ZX | Status: Active - SAMPLE", riskLevel: "LOW RISK", issueTitle: "GST REGISTRATION VERIFIED", whyItMatters: "GST active." },
+          { id: "3.2.4", clauseNumber: "3.2.4", title: "PAN & Udyam Registration", category: "Eligibility & Statutory", requirement: "PAN & MSME Verification", status: "PASSED", requiredValue: "Valid PAN & Udyam", foundValue: "Matched", variance: "Exact Match across documents", documentName: "03_PAN_Certificate.pdf", documentFileName: "03_PAN_Certificate.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 99, extractedText: "Bharat Network Solutions Private Limited | PAN: SYNTHETIC-A001X", riskLevel: "LOW RISK", issueTitle: "ENTITY IDENTITY MATCHED", whyItMatters: "Entity names matched." },
+          { id: "3.2.5", clauseNumber: "3.2.5", title: "Similar Experience Contracts", category: "Technical", requirement: "3 Contracts", status: "PASSED", requiredValue: "3 Certificates", foundValue: "3 Certificates", variance: "Compliant", documentName: "07_Experience_Certificate_1.pdf", documentFileName: "07_Experience_Certificate_1.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 95, extractedText: "3 completed certificates attached.", riskLevel: "LOW RISK", issueTitle: "EXPERIENCE VERIFIED", whyItMatters: "3 experience certs verified." },
+          { id: "4.1", clauseNumber: "4.1", title: "OEM Authorization Form", category: "Technical", requirement: "MAF Form", status: "PASSED", requiredValue: "OEM Certificate", foundValue: "NovaNet Systems MAF", variance: "Compliant", documentName: "10_OEM_Authorization.pdf", documentFileName: "10_OEM_Authorization.pdf", pageNumber: 1, totalPages: 11, confidenceScore: 96, extractedText: "NovaNet Systems - Demo OEM Authorization attached.", riskLevel: "LOW RISK", issueTitle: "OEM AUTHORIZATION VERIFIED", whyItMatters: "MAF verified." }
+        ]
+      }
+    };
+  } else if (caseId.includes("Case_B") || caseId.includes("Mismatch")) {
+    return {
+      case_id: "Case_B_Mismatch_Review",
+      caseId: "DEMO/2026/B/VERIBID-B002",
+      bidderName: "ABC Infra Private Limited",
+      statusLabel: "Potential Issue Detected — Officer Review Required",
+      overall_compliance_score: 62,
+      is_demo_data: true,
+      demo_notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT",
+      analysis: {
+        score: 62,
+        counters: { passed: 2, issues: 2, review: 1, total: 5 },
+        clauses: [
+          { id: "3.2.1", clauseNumber: "3.2.1", title: "Average Annual Turnover", category: "Eligibility & Financial", requirement: "Min. ₹ 10.00 Crore", status: "ISSUE", requiredValue: "₹ 10.00 Crore", foundValue: "₹ 6.80 Crore", variance: "₹ 3.20 Crore (32.0% below requirement)", documentName: "06_Financial_Statement.pdf", documentFileName: "06_Financial_Statement.pdf", pageNumber: 1, totalPages: 8, confidenceScore: 94, extractedText: "Revenue / Turnover: INR 6.8 Crore", riskLevel: "HIGH RISK", issueTitle: "TURNOVER BELOW REQUIRED THRESHOLD", whyItMatters: "Declared turnover ₹6.80 Cr is 32% below ₹10.00 Cr requirement." },
+          { id: "3.2.2", clauseNumber: "3.2.2", title: "Legal Entity Name Matching", category: "Eligibility & Statutory", requirement: "Exact Legal Name Match", status: "ISSUE", requiredValue: "ABC Infra Private Limited", foundValue: "ABC Infrastructure Private Limited (GST)", variance: "Name Discrepancy Detected", documentName: "04_GST_Certificate.pdf", documentFileName: "04_GST_Certificate.pdf", pageNumber: 1, totalPages: 8, confidenceScore: 92, extractedText: "GST Legal Name: ABC Infrastructure Private Limited vs PAN: ABC Infra Private Limited", riskLevel: "HIGH RISK", issueTitle: "CROSS-DOCUMENT NAME VARIATION", whyItMatters: "Legal name variation across GST and PAN certificates." },
+          { id: "3.2.4", clauseNumber: "3.2.4", title: "Similar Experience Contracts", category: "Technical Eligibility", requirement: "3 Completed Contracts", status: "REVIEW", requiredValue: "3 Experience Certificates", foundValue: "1 Certificate Provided", variance: "Fewer Certificates than Declared", documentName: "07_Experience_Certificate.pdf", documentFileName: "07_Experience_Certificate.pdf", pageNumber: 1, totalPages: 8, confidenceScore: 88, extractedText: "Declared 3 contracts, provided 1 certificate.", riskLevel: "MEDIUM RISK", issueTitle: "EXPERIENCE CERTIFICATE COUNT MISMATCH", whyItMatters: "Count mismatch under review." }
+        ]
+      }
+    };
+  } else {
+    return {
+      case_id: "Case_C_Incomplete",
+      caseId: "DEMO/2026/B/VERIBID-C003",
+      bidderName: "Deccan Tech Services Private Limited",
+      statusLabel: "Incomplete Submission — Missing Required Documents",
+      overall_compliance_score: 45,
+      is_demo_data: true,
+      demo_notice: "SYNTHETIC DEMONSTRATION DOCUMENT — NOT A VALID GOVERNMENT OR BUSINESS DOCUMENT",
+      analysis: {
+        score: 45,
+        counters: { passed: 2, issues: 2, review: 1, total: 5 },
+        clauses: [
+          { id: "3.2.1", clauseNumber: "3.2.1", title: "Average Annual Turnover & Financial Statements", category: "Eligibility & Financial", requirement: "Min. ₹ 10.00 Crore + Audited Financials", status: "ISSUE", requiredValue: "Audited Financial Statement PDF", foundValue: "Document Missing", variance: "Mandatory Attachment Missing", documentName: "06_Financial_Statement.pdf (Missing)", documentFileName: "Missing_Financial_Statement.pdf", pageNumber: 0, totalPages: 5, confidenceScore: 0, extractedText: "Financial Statement document missing.", riskLevel: "HIGH RISK", issueTitle: "FINANCIAL STATEMENT MISSING", whyItMatters: "Mandatory document omitted." },
+          { id: "4.1", clauseNumber: "4.1", title: "OEM Authorization Form", category: "Technical Eligibility", requirement: "MAF Form", status: "ISSUE", requiredValue: "Required OEM Certificate", foundValue: "Document Missing", variance: "Mandatory Attachment Missing", documentName: "10_OEM_Authorization.pdf (Missing)", documentFileName: "Missing_OEM_Authorization.pdf", pageNumber: 0, totalPages: 5, confidenceScore: 0, extractedText: "OEM Authorization letter missing.", riskLevel: "HIGH RISK", issueTitle: "OEM AUTHORIZATION MISSING", whyItMatters: "MAF form omitted." }
+        ]
+      }
+    };
+  }
 };

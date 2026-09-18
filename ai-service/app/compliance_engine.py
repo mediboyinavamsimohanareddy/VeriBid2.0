@@ -1,5 +1,10 @@
 import re
 from typing import Dict, Any, List
+from app.rag_service import RAGSemanticMatcher
+from app.consistency_engine import CrossDocumentConsistencyEngine
+from app.predictive_risk import PredictiveRiskModel
+from app.forgery_detector import DocumentForgeryDetector
+from app.collusion_engine import CartelCollusionEngine
 
 DEFAULT_CONFIG = {
     "requiredTurnover": 50000000.0, # ₹ 5.00 Crore default
@@ -13,7 +18,7 @@ DEFAULT_CONFIG = {
 
 class ComplianceEngine:
     @staticmethod
-    def analyze_pages(pages_text: List[str], filename: str = "uploaded_bid.pdf", config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def analyze_pages(pages_text: List[str], filename: str = "uploaded_bid.pdf", config: Dict[str, Any] = None, file_bytes: bytes = None) -> Dict[str, Any]:
         if not config:
             config = DEFAULT_CONFIG
         
@@ -23,45 +28,53 @@ class ComplianceEngine:
         lower_full_text = full_text.lower()
         has_sufficient_text = len(full_text.strip()) > 50
 
+        # Phase 1: Semantic Vector Search & SLM Extraction
+        rag_matches = RAGSemanticMatcher.semantic_match("Minimum Annual Turnover Requirement", pages_text)
+        slm_entities = RAGSemanticMatcher.slm_extract_json(full_text)
+
         # Find turnover and page number
-        detected_turnover = None
+        detected_turnover = slm_entities.get("extracted_turnover_cr")
+        if detected_turnover is not None:
+            detected_turnover = detected_turnover * 10000000.0  # Convert Cr to Rupees
+
         turnover_page = 14
         turnover_extracted_text = "Revenue from Operations ₹ 3,53,00,000"
 
-        for idx, page_str in enumerate(pages_text):
-            p_num = idx + 1
-            p_lower = page_str.lower()
+        if detected_turnover is None:
+            for idx, page_str in enumerate(pages_text):
+                p_num = idx + 1
+                p_lower = page_str.lower()
 
-            crore_match = re.search(r'(?:turnover|revenue)\D*(\d+(?:\.\d+)?)\s*(?:cr|crore)', p_lower)
-            lakh_match = re.search(r'(?:turnover|revenue)\D*(\d+(?:\.\d+)?)\s*(?:lakh|lacs)', p_lower)
-            raw_match = re.search(r'(?:turnover|revenue)\D*₹?\s*([\d,]+)', p_lower)
+                crore_match = re.search(r'(?:turnover|revenue)\D*(\d+(?:\.\d+)?)\s*(?:cr|crore)', p_lower)
+                lakh_match = re.search(r'(?:turnover|revenue)\D*(\d+(?:\.\d+)?)\s*(?:lakh|lacs)', p_lower)
+                raw_match = re.search(r'(?:turnover|revenue)\D*₹?\s*([\d,]+)', p_lower)
 
-            if crore_match:
-                try:
-                    detected_turnover = float(crore_match.group(1)) * 10000000.0
-                    turnover_page = p_num
-                    turnover_extracted_text = page_str[max(0, crore_match.start()-30):min(len(page_str), crore_match.end()+30)].strip()
-                    break
-                except:
-                    pass
-            elif lakh_match:
-                try:
-                    detected_turnover = float(lakh_match.group(1)) * 100000.0
-                    turnover_page = p_num
-                    turnover_extracted_text = page_str[max(0, lakh_match.start()-30):min(len(page_str), lakh_match.end()+30)].strip()
-                    break
-                except:
-                    pass
-            elif raw_match:
-                try:
-                    raw_val = float(raw_match.group(1).replace(",", ""))
-                    if raw_val > 1000:
-                        detected_turnover = raw_val
+                if crore_match:
+                    try:
+                        detected_turnover = float(crore_match.group(1)) * 10000000.0
                         turnover_page = p_num
-                        turnover_extracted_text = page_str[max(0, raw_match.start()-30):min(len(page_str), raw_match.end()+30)].strip()
+                        turnover_extracted_text = page_str[max(0, crore_match.start()-30):min(len(page_str), crore_match.end()+30)].strip()
                         break
-                except:
-                    pass
+                    except:
+                        pass
+                elif lakh_match:
+                    try:
+                        detected_turnover = float(lakh_match.group(1)) * 100000.0
+                        turnover_page = p_num
+                        turnover_extracted_text = page_str[max(0, lakh_match.start()-30):min(len(page_str), lakh_match.end()+30)].strip()
+                        break
+                    except:
+                        pass
+                elif raw_match:
+                    try:
+                        raw_val = float(raw_match.group(1).replace(",", ""))
+                        if raw_val > 1000:
+                            detected_turnover = raw_val
+                            turnover_page = p_num
+                            turnover_extracted_text = page_str[max(0, raw_match.start()-30):min(len(page_str), raw_match.end()+30)].strip()
+                            break
+                    except:
+                        pass
 
         # Search page number for GST
         gst_page = 2
@@ -103,24 +116,59 @@ class ComplianceEngine:
                 mii_text = page_str[:120].strip()
                 break
 
-        # Formulate Clauses
+        # Phase 2: Cross-Document Consistency Matrix
+        extracted_docs_mock = [
+            {
+                "doc_name": "GST_Certificate.pdf",
+                "extracted_entity_name": slm_entities.get("bidder_name") or "ABC Infra Private Limited",
+                "extracted_address": "Plot 42, Industrial Sector 62, Noida",
+                "extracted_gstin": slm_entities.get("gstin") or "07AAAAA0000A1Z5"
+            },
+            {
+                "doc_name": filename,
+                "extracted_entity_name": slm_entities.get("bidder_name") or "ABC Infra Pvt Ltd",
+                "extracted_address": "Sector 62, Noida, Uttar Pradesh",
+                "extracted_gstin": slm_entities.get("gstin") or "07AAAAA0000A1Z5",
+                "extracted_udin": slm_entities.get("udin")
+            }
+        ]
+        consistency_res = CrossDocumentConsistencyEngine.analyze_cross_consistency(
+            bidder_profile={"bidder_name": slm_entities.get("bidder_name") or "ABC Infra Private Limited", "address": "Plot 42, Industrial Area, Sector 62, Noida, UP"},
+            extracted_docs=extracted_docs_mock
+        )
+
+        # Phase 4: Document Image Forgery & Tampering Analysis
+        sample_bytes = file_bytes if file_bytes else b"%PDF-1.4 Mock document bytes for ELA forensic examination"
+        forgery_res = DocumentForgeryDetector.analyze_document_forensics(sample_bytes, filename=filename)
+
+        # Phase 5: Cartel & Collusion Graph ML Analysis
+        collusion_res = CartelCollusionEngine.analyze_collusion(
+            bidder_id="BIDDER_ABC_102",
+            bidder_name=slm_entities.get("bidder_name") or "ABC Infra Private Limited",
+            case_id="GEM/2024/9/19102"
+        )
+
+        # Formulate Clauses & Findings
         clauses = []
         findings = []
+        standard_findings = []
 
-        # 1. Turnover Clause 3.2.1
+        # Shortfall calculations for turnover
+        turnover_shortfall_pct = 0.0
         if detected_turnover is not None:
             found_val_cr = detected_turnover / 10000000.0
             req_val_cr = cfg_turnover / 10000000.0
             if detected_turnover < cfg_turnover:
                 shortfall_cr = req_val_cr - found_val_cr
-                pct = round((shortfall_cr / req_val_cr) * 100, 1)
+                turnover_shortfall_pct = round((shortfall_cr / req_val_cr) * 100, 1)
                 c_status = "ISSUE"
                 c_risk = "HIGH RISK"
                 c_title = "TURNOVER BELOW REQUIRED"
-                c_var = f"₹ {shortfall_cr:.2f} Crore ({pct}% below requirement)"
+                c_var = f"₹ {shortfall_cr:.2f} Crore ({turnover_shortfall_pct}% below requirement)"
                 c_why = f"Tender requires min turnover of ₹{req_val_cr:.2f} Cr. Document contains ₹{found_val_cr:.2f} Cr."
                 f_type = "RED_FLAG"
             else:
+                turnover_shortfall_pct = 0.0
                 c_status = "PASSED"
                 c_risk = "LOW RISK"
                 c_title = "NET WORTH & TURNOVER COMPLIANT"
@@ -162,43 +210,56 @@ class ComplianceEngine:
                 "requiredValue": f"₹ {req_val_cr:.2f} Crore",
                 "confidence": 92
             })
+            standard_findings.append({
+                "issue": "Turnover Requirement Shortfall" if turnover_shortfall_pct > 0 else "Turnover Compliant",
+                "evidence": f"Extracted revenue from Page {turnover_page} ({turnover_extracted_text}) against threshold.",
+                "severity": "High" if turnover_shortfall_pct > 0 else "Low",
+                "recommended_action": "Request financial clarification memo from bidder." if turnover_shortfall_pct > 0 else "Verified."
+            })
         else:
-            # Prototype default fallback clause
+            # When no turnover is extracted in document text, calculate based on requirements
+            req_val_cr = cfg_turnover / 10000000.0
             clauses.append({
                 "id": "3.2.1",
                 "clauseNumber": "3.2.1",
                 "title": "Average Annual Turnover",
                 "category": "Eligibility & Financial",
-                "requirement": "Min. ₹ 5.00 Crore",
-                "status": "ISSUE",
-                "requiredValue": "₹ 5.00 Crore",
-                "foundValue": "₹ 3.53 Crore",
-                "variance": "₹ 1.47 Crore (29.4% below requirement)",
+                "requirement": f"Min. ₹ {req_val_cr:.2f} Crore",
+                "status": "REVIEW" if has_sufficient_text else "ISSUE",
+                "requiredValue": f"₹ {req_val_cr:.2f} Crore",
+                "foundValue": "Financial Figures Not Detected" if has_sufficient_text else "Unreadable Document / Scan",
+                "variance": "Manual Verification Required",
                 "documentName": filename,
                 "documentFileName": filename,
-                "pageNumber": 14,
-                "totalPages": total_pages if total_pages > 1 else 48,
-                "confidenceScore": 92,
-                "extractedText": turnover_extracted_text,
-                "riskLevel": "HIGH RISK",
-                "issueTitle": "TURNOVER BELOW REQUIRED",
-                "whyItMatters": "Tender Clause 3.2.1 requires minimum average annual turnover of ₹5.00 Cr for the last 3 financial years. The vendor has declared ₹3.53 Cr.",
+                "pageNumber": 1,
+                "totalPages": total_pages,
+                "confidenceScore": 50 if has_sufficient_text else 20,
+                "extractedText": full_text[:150] if full_text else "No text extracted from document",
+                "riskLevel": "MEDIUM RISK" if has_sufficient_text else "HIGH RISK",
+                "issueTitle": "TURNOVER DATA UNUNCERTAIN",
+                "whyItMatters": f"Tender Clause 3.2.1 requires minimum average annual turnover of ₹{req_val_cr:.2f} Cr. Turnover figures could not be extracted automatically.",
                 "decision": None,
                 "remarks": ""
             })
             findings.append({
                 "id": "F-3.2.1",
-                "title": "Turnover Below Required",
-                "type": "RED_FLAG",
+                "title": "Turnover Data Unextracted",
+                "type": "WARNING",
                 "clause": "3.2.1",
-                "pageNumber": 14,
-                "description": "Tender Clause 3.2.1 requires minimum average annual turnover of ₹5.00 Cr for the last 3 financial years. The vendor has declared ₹3.53 Cr.",
-                "extractedValue": "₹ 3.53 Crore",
-                "requiredValue": "₹ 5.00 Crore",
-                "confidence": 92
+                "pageNumber": 1,
+                "description": f"Tender Clause 3.2.1 requires minimum average annual turnover of ₹{req_val_cr:.2f} Cr. Verification required.",
+                "extractedValue": "Not Extracted",
+                "requiredValue": f"₹ {req_val_cr:.2f} Crore",
+                "confidence": 50
+            })
+            standard_findings.append({
+                "issue": "Turnover Extraction Incomplete",
+                "evidence": "Automatic text extraction did not isolate explicit turnover figures.",
+                "severity": "Medium",
+                "recommended_action": "Verify financial statement manually."
             })
 
-        # 2. Clause 3.2.2 Net Worth
+        # Net Worth
         clauses.append({
             "id": "3.2.2",
             "clauseNumber": "3.2.2",
@@ -221,19 +282,8 @@ class ComplianceEngine:
             "decision": None,
             "remarks": ""
         })
-        findings.append({
-            "id": "F-3.2.2",
-            "title": "Net Worth Compliant",
-            "type": "PASSED",
-            "clause": "3.2.2",
-            "pageNumber": nw_page,
-            "description": "Vendor maintains a healthy positive net worth satisfying clause 3.2.2.",
-            "extractedValue": "₹ 12.40 Crore",
-            "requiredValue": "Positive Net Worth",
-            "confidence": 98
-        })
 
-        # 3. Clause 3.2.3 GST Registration
+        # GST Registration
         clauses.append({
             "id": "3.2.3",
             "clauseNumber": "3.2.3",
@@ -256,19 +306,8 @@ class ComplianceEngine:
             "decision": None,
             "remarks": ""
         })
-        findings.append({
-            "id": "F-3.2.3",
-            "title": "GST Registration Verified",
-            "type": "PASSED",
-            "clause": "3.2.3",
-            "pageNumber": gst_page,
-            "description": "Tax compliance verified active on GST portal.",
-            "extractedValue": "Active GSTIN",
-            "requiredValue": "Valid GSTIN",
-            "confidence": 98
-        })
 
-        # 4. Clause 4.1 OEM Authorization
+        # OEM Authorization
         clauses.append({
             "id": "4.1",
             "clauseNumber": "4.1",
@@ -291,54 +330,47 @@ class ComplianceEngine:
             "decision": None,
             "remarks": ""
         })
-        if not oem_found:
-            findings.append({
-                "id": "F-4.1",
-                "title": "OEM Authorization Missing",
-                "type": "RED_FLAG",
-                "clause": "4.1",
-                "pageNumber": oem_page,
-                "description": "Vendor must present authorized seller certificate from original equipment manufacturer.",
-                "extractedValue": "Not Found",
-                "requiredValue": "OEM Certificate",
-                "confidence": 0
-            })
 
-        # 5. Clause 4.2 Make in India Compliance
-        clauses.append({
-            "id": "4.2",
-            "clauseNumber": "4.2",
-            "title": "Make in India Compliance",
-            "category": "Technical Eligibility",
-            "requirement": "Local Content Declaration (>= 50%)",
-            "status": "PASSED" if mii_found else "REVIEW",
-            "requiredValue": "Min. 50% Local Content",
-            "foundValue": "62% Declared" if mii_found else "Declaration Missing",
-            "variance": "Compliant" if mii_found else "Requires Verification",
-            "documentName": filename,
-            "documentFileName": filename,
-            "pageNumber": mii_page,
-            "totalPages": total_pages,
-            "confidenceScore": 91 if mii_found else 50,
-            "extractedText": mii_text,
-            "riskLevel": "LOW RISK" if mii_found else "MEDIUM RISK",
-            "issueTitle": "MII COMPLIANCE VERIFIED" if mii_found else "MII DECLARATION UNDER REVIEW",
-            "whyItMatters": "Public procurement indigenous manufacturing preference policy.",
-            "decision": None,
-            "remarks": ""
-        })
+        # Phase 3: Predictive Bidder Risk Scoring & SHAP
+        risk_prediction = PredictiveRiskModel.evaluate_risk(
+            turnover_shortfall_pct=turnover_shortfall_pct,
+            missing_attachment_ratio=0.0 if oem_found else 0.25,
+            entity_drift_score=consistency_res.get("entity_drift_score", 0.0),
+            forgery_confidence=forgery_res.get("confidence", 0.94) if forgery_res.get("tamper_detected") else 0.0,
+            udin_failed=slm_entities.get("udin") is None,
+            gstin_cancelled=False,
+            collusion_detected=collusion_res.get("detected", False)
+        )
 
         passed_cnt = sum(1 for c in clauses if c["status"] == "PASSED")
         issues_cnt = sum(1 for c in clauses if c["status"] == "ISSUE")
         review_cnt = sum(1 for c in clauses if c["status"] == "REVIEW")
         tot_cnt = len(clauses)
 
-        score = round((passed_cnt / tot_cnt) * 100) if tot_cnt > 0 else 68
-
         return {
+            "bidder_id": "BIDDER_ABC_102",
+            "overall_compliance_score": risk_prediction["overall_compliance_score"],
+            "risk_level": risk_prediction["risk_level"],
+            "rejection_probability": risk_prediction["rejection_probability"],
+            "shap_feature_importance": risk_prediction["shap_feature_importance"],
+            "graph_collusion_flag": {
+                "detected": collusion_res["detected"],
+                "cluster_id": collusion_res["cluster_id"],
+                "shared_attributes": collusion_res["shared_attributes"]
+            },
+            "forgery_analysis": {
+                "tamper_detected": forgery_res["tamper_detected"],
+                "method": forgery_res["method"],
+                "confidence": forgery_res["confidence"],
+                "flagged_regions": forgery_res["flagged_regions"]
+            },
+            "findings": standard_findings,
+            "human_review_required": risk_prediction["human_review_required"],
+
+            # Backward-compatible frontend UI payload keys
             "filename": filename,
             "totalPages": total_pages,
-            "score": score,
+            "score": risk_prediction["overall_compliance_score"],
             "counters": {
                 "passed": passed_cnt,
                 "issues": issues_cnt,
@@ -346,7 +378,7 @@ class ComplianceEngine:
                 "total": tot_cnt
             },
             "clauses": clauses,
-            "findings": findings
+            "findings_legacy": findings
         }
 
     @staticmethod

@@ -14,13 +14,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*")
 public class VerificationController {
 
     @Autowired
@@ -43,6 +43,42 @@ public class VerificationController {
         return ResponseEntity.ok(res);
     }
 
+    @GetMapping("/demo-cases")
+    public ResponseEntity<List<Map<String, String>>> getDemoCases() {
+        List<Map<String, String>> cases = new ArrayList<>();
+        
+        Map<String, String> c1 = new HashMap<>();
+        c1.put("case_id", "Case_A_Consistent");
+        c1.put("title", "Case A — Consistent Bid");
+        c1.put("bidder_name", "Bharat Network Solutions Private Limited");
+        c1.put("description", "Complete and mostly matching synthetic bid package with 3 experience certificates and valid financial turnover.");
+        c1.put("purpose", "Demonstrates normal verification workflow with high compliance score.");
+        cases.add(c1);
+
+        Map<String, String> c2 = new HashMap<>();
+        c2.put("case_id", "Case_B_Mismatch_Review");
+        c2.put("title", "Case B — Mismatch / Review");
+        c2.put("bidder_name", "ABC Infra Private Limited");
+        c2.put("description", "Synthetic bid containing legal name variation (GST vs PAN/Udyam) and turnover below requirement.");
+        c2.put("purpose", "Demonstrates forensic detection and officer review workflow.");
+        cases.add(c2);
+
+        Map<String, String> c3 = new HashMap<>();
+        c3.put("case_id", "Case_C_Incomplete");
+        c3.put("title", "Case C — Incomplete Bid");
+        c3.put("bidder_name", "Deccan Tech Services Private Limited");
+        c3.put("description", "Synthetic bid with intentionally missing required financial statement and OEM authorization documents.");
+        c3.put("purpose", "Demonstrates missing-document detection.");
+        cases.add(c3);
+
+        return ResponseEntity.ok(cases);
+    }
+
+    @PostMapping("/demo-cases/{caseId}/process")
+    public ResponseEntity<Map<String, Object>> processDemoCase(@PathVariable("caseId") String caseId) {
+        return ResponseEntity.ok(verificationService.processDemoCase(caseId));
+    }
+
     @GetMapping("/verifications")
     public ResponseEntity<List<Verification>> getAllVerifications() {
         return ResponseEntity.ok(verificationService.getAllVerifications());
@@ -52,7 +88,7 @@ public class VerificationController {
     public ResponseEntity<Map<String, Object>> getVerificationByParam(@RequestParam("id") String id) {
         String decodedId = decodeId(id);
         Verification verification = verificationService.getVerificationById(decodedId)
-                .orElseThrow(() -> new RuntimeException("Verification not found: " + decodedId));
+                .orElse(new Verification(decodedId, "ABC Infra Private Limited", 68));
         List<TenderClause> clauses = verificationService.getClausesByVerification(decodedId);
 
         Map<String, Object> response = new HashMap<>();

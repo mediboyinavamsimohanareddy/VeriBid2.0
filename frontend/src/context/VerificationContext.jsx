@@ -571,7 +571,7 @@ export const VerificationProvider = ({ children }) => {
       return;
     }
 
-    const fileObjUrl = URL.createObjectURL(file);
+    const fileObjUrl = (file instanceof Blob || file instanceof File) ? URL.createObjectURL(file) : '';
     const name = file.name;
     const size = (file.size / (1024 * 1024)).toFixed(1);
 

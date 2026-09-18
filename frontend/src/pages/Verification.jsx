@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, Check, ArrowRight, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Check, ArrowRight, ShieldCheck, Upload, Sparkles, Info } from 'lucide-react';
 import TenderClauses from '../components/TenderClauses';
 import EvidenceViewer from '../components/EvidenceViewer';
 import RightAuditPanel from '../components/RightAuditPanel';
 import WorkflowStepper from '../components/WorkflowStepper';
 import DocumentUploadModal from '../components/DocumentUploadModal';
+import DemoCasesModal from '../components/DemoCasesModal';
 import ClarificationModal from '../components/ClarificationModal';
 import OfficerDecision from '../components/OfficerDecision';
 import { saveOfficerDecision } from '../services/api';
@@ -30,6 +31,7 @@ export default function Verification() {
   } = useVerification();
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
   const [isClarificationOpen, setIsClarificationOpen] = useState(false);
 
   useEffect(() => {
@@ -51,48 +53,72 @@ export default function Verification() {
   const statusLabel = isProcessing
     ? "Verification In Progress"
     : activeSession
-    ? "Verification Complete"
+    ? (activeSession.statusLabel || "Verification Complete")
     : "Ready For Verification";
+
+  const isDemoActive = activeCaseId?.startsWith("DEMO") || activeCaseId?.startsWith("Case");
 
   return (
     <div className="space-y-4 font-sans animate-fade-up select-none">
-      {/* 1. TOP CASE CONTEXT HEADER (Matching Reference Image 2) */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 px-4 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Case ID Badge / Selector */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-left cursor-pointer hover:border-blue-500 transition-colors">
-            <span className="text-[9px] uppercase font-bold text-slate-400 block leading-none mb-0.5">CASE ID</span>
-            <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-black text-slate-900 font-mono">{activeCaseId || "GEM/2024/9/19102"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+      {/* 1. TOP CASE CONTEXT HEADER */}
+      <div className="bg-white rounded-xl border border-slate-200 p-3.5 px-4 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Case ID Badge */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-left">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block leading-none mb-0.5">CASE ID</span>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-xs font-black text-slate-900 font-mono">{activeCaseId || "GEM/2024/9/19102"}</span>
+              </div>
+            </div>
+
+            {/* Bidder Badge */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-left">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block leading-none mb-0.5">BIDDER</span>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-xs font-extrabold text-slate-900">{activeBidderName || "ABC Infra Private Limited"}</span>
+              </div>
+            </div>
+
+            {/* Verification Status Badge */}
+            <div className="flex items-center space-x-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-full text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+              <span>{statusLabel}</span>
             </div>
           </div>
 
-          {/* Bidder Badge / Selector */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-left cursor-pointer hover:border-blue-500 transition-colors">
-            <span className="text-[9px] uppercase font-bold text-slate-400 block leading-none mb-0.5">BIDDER</span>
-            <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-extrabold text-slate-900">{activeBidderName || "ABC Infra Private Limited"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          {/* SINGLE PRIMARY HEADER ACTION BUTTON */}
+          <button
+            onClick={() => setIsUploadOpen(true)}
+            className="px-4 py-1.5 bg-[#071328] hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center space-x-2 shadow-2xs transition-all"
+          >
+            <Upload className="w-3.5 h-3.5 text-blue-400" />
+            <span>Upload Documents</span>
+          </button>
+        </div>
+
+        {/* Synthetic Demo Data Notice Badge */}
+        {isDemoActive && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 px-3 flex items-center justify-between text-xs text-amber-900">
+            <div className="flex items-center space-x-2">
+              <span className="bg-amber-200 text-amber-900 font-extrabold text-[10px] px-2 py-0.5 rounded uppercase font-mono">
+                Synthetic Demo Data
+              </span>
+              <span className="font-semibold text-[11px]">
+                Active SIH Jury Case: Every document is a fictional demonstration sample.
+              </span>
             </div>
+            <span className="text-[10px] text-amber-700 font-mono hidden md:inline">
+              Fictional Names & Identifiers strictly for software testing
+            </span>
           </div>
-
-          {/* Verification Status Badge */}
-          <div className="flex items-center space-x-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-full text-xs font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-            <span>{statusLabel}</span>
-          </div>
-        </div>
-
-        <div className="text-xs text-slate-500 font-medium hidden md:block">
-          GeM Compliance Verification Engine • GFR Rule 149
-        </div>
+        )}
       </div>
 
       {/* 2. TOP STEPPER & OVERALL COMPLIANCE BAR */}
       <WorkflowStepper />
 
-      {/* 3. MAIN 3-COLUMN WORKSPACE (Matching Reference Image 2 Desktop Layout) */}
+      {/* 3. MAIN 3-COLUMN WORKSPACE */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-[620px] items-stretch">
         {/* Left Column: REQUIRED PROPERTIES (3 Cols) */}
         <div className="lg:col-span-3 h-[620px]">
@@ -158,6 +184,11 @@ export default function Verification() {
         caseId={activeCaseId || "GEM/2024/9/19102"}
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
+      />
+
+      <DemoCasesModal
+        isOpen={isDemoOpen}
+        onClose={() => setIsDemoOpen(false)}
       />
 
       <ClarificationModal
