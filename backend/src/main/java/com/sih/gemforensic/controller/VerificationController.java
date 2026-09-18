@@ -159,11 +159,15 @@ public class VerificationController {
     @PostMapping("/verifications/documents")
     public ResponseEntity<Map<String, String>> uploadDocument(
             @RequestParam("id") String id,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "files", required = false) MultipartFile[] files) {
         Map<String, String> res = new HashMap<>();
         res.put("documentId", "doc-" + System.currentTimeMillis());
-        res.put("fileName", file.getOriginalFilename());
-        res.put("status", "Uploaded and Queued for OCR Analysis");
+        int count = (files != null && files.length > 0) ? files.length : 1;
+        String name = (files != null && files.length > 0) ? files[0].getOriginalFilename() : (file != null ? file.getOriginalFilename() : "document.pdf");
+        res.put("fileName", name);
+        res.put("documentCount", String.valueOf(count));
+        res.put("status", "Uploaded (" + count + " file(s)/folder) and Queued for Forensic Analysis");
         return ResponseEntity.ok(res);
     }
 }

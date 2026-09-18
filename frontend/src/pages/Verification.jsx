@@ -93,7 +93,7 @@ export default function Verification() {
             className="px-4 py-1.5 bg-[#071328] hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center space-x-2 shadow-2xs transition-all"
           >
             <Upload className="w-3.5 h-3.5 text-blue-400" />
-            <span>Upload Documents</span>
+            <span>Upload Folder or Files</span>
           </button>
         </div>
 

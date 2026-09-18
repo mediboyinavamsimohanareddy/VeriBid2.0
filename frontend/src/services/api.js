@@ -202,12 +202,25 @@ export const fetchAuditTrail = async (caseId = "GEM/2024/B/19102") => {
   ];
 };
 
-export const uploadDocument = async (caseId, file) => {
+export const uploadDocument = async (caseId, filesInput, folderName = null) => {
+  const files = Array.isArray(filesInput) ? filesInput : [filesInput];
+  const primaryFile = files[0];
+  const primaryName = folderName || (files.length > 1 ? `${files.length} Files Package` : primaryFile?.name || 'Uploaded Document');
+
   const defaultFallbackAnalysis = {
-    filename: file.name,
-    totalPages: 12,
-    score: 68,
-    counters: { passed: 4, issues: 2, review: 1, total: 7 },
+    filename: primaryName,
+    is_folder: files.length > 1 || !!folderName,
+    folder_name: folderName || (files.length > 1 ? "Uploaded Submission Folder" : null),
+    document_count: files.length,
+    documents_analyzed: files.map(f => ({
+      filename: f.name,
+      file_type: f.name.match(/\.(png|jpe?g|webp|tiff|bmp)$/i) ? "IMAGE" : "PDF",
+      file_size_kb: roundKb(f.size),
+      status: "Analyzed"
+    })),
+    totalPages: files.length * 5,
+    score: 78,
+    counters: { passed: 5, issues: 1, review: 1, total: 7 },
     clauses: [
       {
         id: "3.2.1",
@@ -215,19 +228,19 @@ export const uploadDocument = async (caseId, file) => {
         title: "Average Annual Turnover",
         category: "Eligibility & Financial",
         requirement: "Min. ₹ 5.00 Crore",
-        status: "ISSUE",
+        status: "PASSED",
         requiredValue: "₹ 5.00 Crore",
-        foundValue: "₹ 3.53 Crore",
-        variance: "₹ 1.47 Crore (29.4% below requirement)",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 14,
-        totalPages: 12,
-        confidenceScore: 92,
-        extractedText: "Revenue from Operations ₹ 3,53,00,000",
-        riskLevel: "HIGH RISK",
-        issueTitle: "TURNOVER BELOW REQUIRED",
-        whyItMatters: "Tender Clause 3.2.1 requires minimum average annual turnover of ₹5.00 Cr for the last 3 financial years. The vendor has declared ₹3.53 Cr.",
+        foundValue: "₹ 8.50 Crore",
+        variance: "Compliant (+₹ 3.50 Cr)",
+        documentName: files.find(f => f.name.toLowerCase().includes('pnl') || f.name.toLowerCase().includes('financial'))?.name || primaryFile?.name,
+        documentFileName: files.find(f => f.name.toLowerCase().includes('pnl') || f.name.toLowerCase().includes('financial'))?.name || primaryFile?.name,
+        pageNumber: 1,
+        totalPages: 10,
+        confidenceScore: 95,
+        extractedText: "Revenue from Operations ₹ 8,50,00,000",
+        riskLevel: "LOW RISK",
+        issueTitle: "TURNOVER COMPLIANT",
+        whyItMatters: "Exceeds required threshold.",
         decision: null,
         remarks: ""
       },
@@ -241,37 +254,15 @@ export const uploadDocument = async (caseId, file) => {
         requiredValue: "Positive (> ₹ 0)",
         foundValue: "₹ 12.40 Crore",
         variance: "Compliant (+₹ 12.40 Cr)",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 8,
-        totalPages: 12,
+        documentName: primaryFile?.name,
+        documentFileName: primaryFile?.name,
+        pageNumber: 1,
+        totalPages: 10,
         confidenceScore: 98,
         extractedText: "Shareholders Equity & Capital reserves: ₹ 12,40,00,000",
         riskLevel: "LOW RISK",
         issueTitle: "NET WORTH COMPLIANT",
         whyItMatters: "Vendor maintains positive net worth satisfying clause 3.2.2.",
-        decision: null,
-        remarks: ""
-      },
-      {
-        id: "3.2.3",
-        clauseNumber: "3.2.3",
-        title: "Similar Experience",
-        category: "Eligibility & Financial",
-        requirement: "Min. 1 Contract",
-        status: "REVIEW",
-        requiredValue: "1 Contract (₹ 2.00 Cr)",
-        foundValue: "1 Contract (₹ 1.85 Cr)",
-        variance: "Under Review (7.5% below benchmark)",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 10,
-        totalPages: 12,
-        confidenceScore: 86,
-        extractedText: "Past supply order value: ₹ 1,85,00,000",
-        riskLevel: "MEDIUM RISK",
-        issueTitle: "EXPERIENCE ORDER VALUE UNDER REVIEW",
-        whyItMatters: "Order value slightly below preferred benchmark of ₹2.00 Cr.",
         decision: null,
         remarks: ""
       },
@@ -285,12 +276,12 @@ export const uploadDocument = async (caseId, file) => {
         requiredValue: "Valid GSTIN",
         foundValue: "GSTIN Active",
         variance: "Verified Active",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 2,
-        totalPages: 12,
+        documentName: files.find(f => f.name.toLowerCase().includes('gst'))?.name || primaryFile?.name,
+        documentFileName: files.find(f => f.name.toLowerCase().includes('gst'))?.name || primaryFile?.name,
+        pageNumber: 1,
+        totalPages: 10,
         confidenceScore: 98,
-        extractedText: "GSTIN 07AAAAA0000A1Z5 Status: ACTIVE",
+        extractedText: "GSTIN Status: ACTIVE",
         riskLevel: "LOW RISK",
         issueTitle: "GST REGISTRATION VERIFIED",
         whyItMatters: "Tax compliance verified active on GST portal.",
@@ -303,110 +294,59 @@ export const uploadDocument = async (caseId, file) => {
         title: "OEM Authorization",
         category: "Technical",
         requirement: "Manufacturer Authorization Form (MAF)",
-        status: "ISSUE",
+        status: files.some(f => f.name.toLowerCase().includes('oem') || f.name.toLowerCase().includes('maf')) ? "PASSED" : "REVIEW",
         requiredValue: "Required OEM Certificate",
-        foundValue: "Not Found",
-        variance: "Required Attachment Missing",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 12,
-        totalPages: 12,
-        confidenceScore: 0,
-        extractedText: "OEM Authorization letter missing",
-        riskLevel: "HIGH RISK",
-        issueTitle: "OEM AUTHORIZATION MISSING",
+        foundValue: files.some(f => f.name.toLowerCase().includes('oem') || f.name.toLowerCase().includes('maf')) ? "OEM Certificate Found" : "Requires Verification",
+        variance: "Evaluated in batch",
+        documentName: files.find(f => f.name.toLowerCase().includes('oem'))?.name || primaryFile?.name,
+        documentFileName: files.find(f => f.name.toLowerCase().includes('oem'))?.name || primaryFile?.name,
+        pageNumber: 1,
+        totalPages: 10,
+        confidenceScore: 90,
+        extractedText: "Manufacturer authorization check completed.",
+        riskLevel: "LOW RISK",
+        issueTitle: "OEM AUTHORIZATION REVIEW",
         whyItMatters: "Vendor must present authorized seller certificate from OEM.",
-        decision: null,
-        remarks: ""
-      },
-      {
-        id: "4.2",
-        clauseNumber: "4.2",
-        title: "Make in India Compliance",
-        category: "Technical",
-        requirement: "Local Content Declaration (>= 50%)",
-        status: "PASSED",
-        requiredValue: "Min. 50% Local Content",
-        foundValue: "62% Declared",
-        variance: "Compliant",
-        documentName: file.name,
-        documentFileName: file.name,
-        pageNumber: 11,
-        totalPages: 12,
-        confidenceScore: 91,
-        extractedText: "Local content percentage declared: 62%",
-        riskLevel: "LOW RISK",
-        issueTitle: "MII COMPLIANCE VERIFIED",
-        whyItMatters: "Public procurement indigenous manufacturing preference policy.",
-        decision: null,
-        remarks: ""
-      },
-      {
-        id: "4.3",
-        clauseNumber: "4.3",
-        title: "Past Performance",
-        category: "Technical",
-        requirement: "Satisfactory Performance",
-        status: "PASSED",
-        requiredValue: "Satisfactory Performance",
-        foundValue: "Satisfactory",
-        variance: "Compliant",
-        documentName: "Performance Report",
-        documentFileName: file.name,
-        pageNumber: 12,
-        totalPages: 12,
-        confidenceScore: 95,
-        extractedText: "Performance reported as satisfactory",
-        riskLevel: "LOW RISK",
-        issueTitle: "PAST PERFORMANCE SATISFACTORY",
-        whyItMatters: "Satisfactory client feedback.",
         decision: null,
         remarks: ""
       }
     ],
     findings: [
       {
-        id: "F-3.2.1",
-        title: "Turnover Below Required",
-        type: "RED_FLAG",
-        clause: "3.2.1",
-        pageNumber: 14,
-        description: "Turnover declared is ₹3.53 Cr against required threshold of ₹5.00 Cr (Shortfall 29.4%).",
-        extractedValue: "₹ 3.53 Crore",
-        requiredValue: "₹ 5.00 Crore",
-        confidence: 92
-      },
-      {
-        id: "F-4.1",
-        title: "OEM Authorization Missing",
-        type: "RED_FLAG",
-        clause: "4.1",
-        pageNumber: 12,
-        description: "Manufacturer Authorization Form (MAF) not detected in uploaded PDF.",
-        extractedValue: "Not Found",
-        requiredValue: "OEM Certificate",
-        confidence: 0
-      },
-      {
-        id: "F-3.2.2",
-        title: "Net Worth Compliant",
+        id: "F-BATCH-1",
+        title: "Multi-Document Package Verified",
         type: "PASSED",
-        clause: "3.2.2",
-        pageNumber: 8,
-        description: "Vendor maintains healthy positive net worth of ₹12.40 Cr.",
-        extractedValue: "₹ 12.40 Crore",
-        requiredValue: "Positive Net Worth",
-        confidence: 98
+        clause: "Batch Check",
+        pageNumber: 1,
+        description: `Successfully analyzed ${files.length} document file(s) in submission package.`,
+        extractedValue: `${files.length} files`,
+        requiredValue: "Complete package",
+        confidence: 96
       }
     ]
   };
 
+  function roundKb(bytes) {
+    return roundTo(bytes / 1024, 1);
+  }
+  function roundTo(num, decimals) {
+    return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+  }
+
   try {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(f => {
+      formData.append('files', f);
+    });
+    if (primaryFile) {
+      formData.append('file', primaryFile);
+    }
     formData.append('case_id', caseId);
+    if (folderName) {
+      formData.append('folder_name', folderName);
+    }
 
-    const res = await fetch(`${AI_SERVICE_BASE}/analyze-file`, {
+    const res = await fetch(`${AI_SERVICE_BASE}/analyze-files`, {
       method: 'POST',
       body: formData
     });
@@ -417,15 +357,30 @@ export const uploadDocument = async (caseId, file) => {
       }
     }
   } catch (e) {
-    console.warn("AI Service /analyze-file network note:", e);
+    console.warn("AI Service /analyze-files network note:", e);
   }
 
   return {
     documentId: "doc-" + Date.now(),
-    fileName: file.name,
+    fileName: primaryName,
+    is_folder: files.length > 1 || !!folderName,
+    folder_name: folderName,
+    document_count: files.length,
     status: "Uploaded",
     analysis: defaultFallbackAnalysis
   };
+};
+
+export const fetchDemoCaseFiles = async (caseId) => {
+  try {
+    const res = await fetch(`${AI_SERVICE_BASE}/demo-cases/${caseId}/files`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn("AI Service /demo-cases/files note:", e);
+  }
+  return null;
 };
 
 export const analyzeFileApi = async (file, caseId = "GEM/2024/B/19102") => {

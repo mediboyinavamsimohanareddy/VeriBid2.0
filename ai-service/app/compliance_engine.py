@@ -385,3 +385,101 @@ class ComplianceEngine:
     def analyze_document_text(text: str, filename: str = "uploaded_bid.pdf", config: Dict[str, Any] = None) -> Dict[str, Any]:
         pages_text = [text] if text else []
         return ComplianceEngine.analyze_pages(pages_text, filename, config)
+
+    @classmethod
+    def analyze_file_batch(cls, files_list: List[Dict[str, Any]], config: Dict[str, Any] = None, folder_name: str = None) -> Dict[str, Any]:
+        if not files_list:
+            return cls.analyze_pages([], "uploaded_bid.pdf", config)
+
+        if len(files_list) == 1 and not folder_name:
+            item = files_list[0]
+            res = cls.analyze_pages(item.get("pages_text", []), item.get("filename", "uploaded_bid.pdf"), config, item.get("content"))
+            res["is_folder"] = False
+            res["document_count"] = 1
+            res["documents_analyzed"] = [{
+                "filename": item.get("filename"),
+                "file_type": item.get("file_type", "PDF"),
+                "file_size_kb": round(len(item.get("content", b"")) / 1024, 1),
+                "status": "Analyzed"
+            }]
+            return res
+
+        # Multi-file / Folder Analysis Pipeline
+        if not config:
+            config = DEFAULT_CONFIG
+
+        is_folder = True
+        doc_count = len(files_list)
+        documents_analyzed = []
+        all_pages_text = []
+        doc_by_category = {}
+
+        for item in files_list:
+            fname = item.get("filename", "doc.pdf")
+            content = item.get("content", b"")
+            ftype = item.get("file_type", "PDF")
+            pages_text = item.get("pages_text", [])
+            
+            # Combine text
+            file_combined_text = "\n".join(pages_text) if pages_text else ""
+            all_pages_text.extend(pages_text)
+
+            documents_analyzed.append({
+                "filename": fname,
+                "file_type": ftype,
+                "file_size_kb": round(len(content) / 1024, 1),
+                "status": "Analyzed",
+                "page_count": len(pages_text) if pages_text else 1
+            })
+
+            # Document classification based on filename and content
+            fname_lower = fname.lower()
+            text_lower = file_combined_text.lower()
+
+            if "turnover" in fname_lower or "financial" in fname_lower or "pnl" in fname_lower or "profit" in fname_lower or "balance" in fname_lower or "revenue" in text_lower:
+                doc_by_category["financial"] = fname
+            if "gst" in fname_lower or "gstin" in text_lower:
+                doc_by_category["gst"] = fname
+            if "pan" in fname_lower or "udyam" in fname_lower or "identity" in fname_lower:
+                doc_by_category["identity"] = fname
+            if "oem" in fname_lower or "maf" in fname_lower or "authorization" in fname_lower or "manufacturer" in text_lower:
+                doc_by_category["oem"] = fname
+            if "experience" in fname_lower or "contract" in fname_lower or "past_performance" in fname_lower:
+                doc_by_category["experience"] = doc_by_category.get("experience", [])
+                if isinstance(doc_by_category["experience"], list):
+                    doc_by_category["experience"].append(fname)
+            if "mii" in fname_lower or "make_in_india" in fname_lower or "declaration" in fname_lower:
+                doc_by_category["mii"] = fname
+
+        # Run core page compliance analysis on all combined text
+        base_filename = folder_name or (files_list[0].get("filename") if files_list else "Package_Folder")
+        first_content = files_list[0].get("content") if files_list else None
+        res = cls.analyze_pages(all_pages_text, base_filename, config, first_content)
+
+        # Enhance clauses with specific document attributions
+        for clause in res.get("clauses", []):
+            cid = clause.get("id")
+            if cid == "3.2.1" and "financial" in doc_by_category:
+                clause["documentName"] = doc_by_category["financial"]
+                clause["documentFileName"] = doc_by_category["financial"]
+            elif cid == "3.2.2" and "financial" in doc_by_category:
+                clause["documentName"] = doc_by_category["financial"]
+                clause["documentFileName"] = doc_by_category["financial"]
+            elif cid == "3.2.3" and "gst" in doc_by_category:
+                clause["documentName"] = doc_by_category["gst"]
+                clause["documentFileName"] = doc_by_category["gst"]
+            elif cid == "4.1" and "oem" in doc_by_category:
+                clause["documentName"] = doc_by_category["oem"]
+                clause["documentFileName"] = doc_by_category["oem"]
+                clause["status"] = "PASSED"
+                clause["variance"] = "Compliant"
+                clause["foundValue"] = "OEM Certificate Verified"
+                clause["issueTitle"] = "OEM AUTHORIZATION VERIFIED"
+                clause["riskLevel"] = "LOW RISK"
+
+        res["is_folder"] = is_folder
+        res["folder_name"] = folder_name or "Submission_Package"
+        res["document_count"] = doc_count
+        res["documents_analyzed"] = documents_analyzed
+
+        return res

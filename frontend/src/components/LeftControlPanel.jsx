@@ -23,20 +23,20 @@ export default function LeftControlPanel({
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      setUploadedFile(file);
-      showToast(`Ingested file: ${file.name}`, 'success');
-      if (onFileUpload) onFileUpload(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      setUploadedFile(files[0]);
+      showToast(`Ingested ${files.length} file(s) for verification`, 'success');
+      if (onFileUpload) onFileUpload(files.length === 1 ? files[0] : files);
     }
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setUploadedFile(file);
-      showToast(`Ingested file: ${file.name}`, 'success');
-      if (onFileUpload) onFileUpload(file);
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setUploadedFile(files[0]);
+      showToast(`Ingested ${files.length} file(s) for verification`, 'success');
+      if (onFileUpload) onFileUpload(files.length === 1 ? files[0] : files);
     }
   };
 
@@ -68,7 +68,8 @@ export default function LeftControlPanel({
           >
             <input 
               type="file" 
-              accept=".pdf,.zip,.json,.xml"
+              multiple
+              accept=".pdf,.zip,.json,.xml,.png,.jpg,.jpeg"
               onChange={handleFileChange}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             />

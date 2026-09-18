@@ -521,6 +521,10 @@ export const VerificationProvider = ({ children }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStage, setCurrentStage] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [isFolder, setIsFolder] = useState(false);
+  const [folderName, setFolderName] = useState('');
   const [pdfObjectUrl, setPdfObjectUrl] = useState(null);
   const [fileName, setFileName] = useState("");
   const [fileSizeKb, setFileSizeKb] = useState("");
@@ -540,6 +544,17 @@ export const VerificationProvider = ({ children }) => {
     setSelectedClause(found);
   };
 
+  const selectFileByIndex = (index) => {
+    if (uploadedFiles && uploadedFiles[index]) {
+      setActiveFileIndex(index);
+      const fileItem = uploadedFiles[index];
+      setUploadedFile(fileItem.fileObj || null);
+      setPdfObjectUrl(fileItem.url || null);
+      setFileName(fileItem.name || '');
+      setFileSizeKb(fileItem.sizeKb || '');
+    }
+  };
+
   const loadCaseById = (cId) => {
     if (!cId) return;
     const preset = CASE_PRESETS[cId] || CASE_PRESETS["GEM/2024/B/19102"];
@@ -552,6 +567,10 @@ export const VerificationProvider = ({ children }) => {
     setClauses(preset.clauses);
     setSelectedClause(preset.clauses[0]);
     setFindings(preset.findings);
+    setIsFolder(false);
+    setFolderName('');
+    setUploadedFiles([{ name: preset.fileName, sizeKb: preset.fileSizeKb, url: null, isImage: false }]);
+    setActiveFileIndex(0);
     setCurrentStage(4);
     setPipelineSteps([
       { id: 1, label: "Document Collected", desc: "Document received and verified", status: "COMPLETED", time: "1s" },
@@ -563,22 +582,54 @@ export const VerificationProvider = ({ children }) => {
     ]);
   };
 
-  const startVerificationWorkflow = async (file, caseId = "GEM/2024/9/19102") => {
-    if (!file) return;
+  const startVerificationWorkflow = async (filesInput, preCalculatedAnalysis = null, caseId = "GEM/2024/9/19102", folderNameInput = null) => {
+    if (!filesInput) return;
 
     if (isProcessing) {
       showToast('A verification session is already in progress.', 'warning');
       return;
     }
 
-    const fileObjUrl = (file instanceof Blob || file instanceof File) ? URL.createObjectURL(file) : '';
-    const name = file.name;
-    const size = (file.size / (1024 * 1024)).toFixed(1);
+    const fileList = Array.isArray(filesInput) ? filesInput : [filesInput];
+    if (fileList.length === 0) return;
 
-    setUploadedFile(file);
-    setPdfObjectUrl(fileObjUrl);
-    setFileName(name);
-    setFileSizeKb(size);
+    const processedFiles = fileList.map(f => {
+      let fileObj = null;
+      let url = '';
+      let name = '';
+      let sizeKb = '0.0';
+      let isImage = false;
+
+      if (f instanceof File || f instanceof Blob) {
+        fileObj = f;
+        url = URL.createObjectURL(f);
+        name = f.name || 'document.pdf';
+        sizeKb = (f.size / (1024 * 1024)).toFixed(1);
+        isImage = !!name.match(/\.(png|jpe?g|webp|tiff|bmp)$/i);
+      } else if (typeof f === 'object') {
+        name = f.name || f.filename || 'document.pdf';
+        url = f.url || f.pdfObjectUrl || '';
+        sizeKb = f.sizeKb || f.file_size_kb || '1.2';
+        isImage = f.isImage || !!name.match(/\.(png|jpe?g|webp|tiff|bmp)$/i);
+        fileObj = f.fileObj || null;
+      }
+
+      return { name, url, sizeKb, isImage, fileObj };
+    });
+
+    const isPkgFolder = fileList.length > 1 || !!folderNameInput;
+    const primaryName = folderNameInput || (isPkgFolder ? `${fileList.length} Files Package` : processedFiles[0].name);
+
+    setUploadedFiles(processedFiles);
+    setActiveFileIndex(0);
+    setIsFolder(isPkgFolder);
+    setFolderName(folderNameInput || (isPkgFolder ? "Submission Folder" : ""));
+
+    const first = processedFiles[0];
+    setUploadedFile(first.fileObj);
+    setPdfObjectUrl(first.url);
+    setFileName(first.name);
+    setFileSizeKb(first.sizeKb);
 
     setIsProcessing(true);
     setCurrentStage(1);
@@ -591,7 +642,7 @@ export const VerificationProvider = ({ children }) => {
     setSelectedClause(resetClauses[0]);
 
     setPipelineSteps([
-      { id: 1, label: "Document Collected", desc: "Document received and verified", status: "COMPLETED", time: "1s" },
+      { id: 1, label: "Documents Collected", desc: `${fileList.length} file(s) received and verified`, status: "COMPLETED", time: "1s" },
       { id: 2, label: "Extracting Document Information", desc: "Reading company details, financial data...", status: "PROCESSING", time: "3s" },
       { id: 3, label: "Checking Financial Eligibility", desc: "Analyzing revenue and turnover...", status: "PENDING", time: "" },
       { id: 4, label: "Checking Certificate Requirements", desc: "Validating GST, PAN, Udyam, etc.", status: "PENDING", time: "" },
@@ -599,12 +650,24 @@ export const VerificationProvider = ({ children }) => {
       { id: 6, label: "Generating Findings", desc: "Creating compliance report", status: "PENDING", time: "" }
     ]);
 
-    setActiveSession({ filename: name, fileSizeKb: size, pdfObjectUrl: fileObjUrl });
-    showToast(`✓ Document Received: ${name}`, 'info');
+    setActiveSession({
+      filename: primaryName,
+      fileSizeKb: first.sizeKb,
+      pdfObjectUrl: first.url,
+      isFolder: isPkgFolder,
+      documentCount: fileList.length
+    });
+
+    showToast(`✓ Received ${fileList.length} file(s) for verification analysis`, 'info');
 
     try {
-      const uploadRes = await uploadDocument(caseId, file);
-      const analysisData = uploadRes?.analysis;
+      let analysisData = preCalculatedAnalysis;
+
+      if (!analysisData) {
+        const rawFiles = processedFiles.map(pf => pf.fileObj).filter(Boolean);
+        const uploadRes = await uploadDocument(caseId, rawFiles.length > 0 ? rawFiles : fileList, folderNameInput);
+        analysisData = uploadRes?.analysis;
+      }
 
       // Step 2 Completed -> Step 3 Processing
       setTimeout(() => {
@@ -637,7 +700,7 @@ export const VerificationProvider = ({ children }) => {
         setPipelineSteps(prev => prev.map(s => ({ ...s, status: "COMPLETED" })));
         setCurrentStage(4);
         setIsProcessing(false);
-        showToast(`✓ AI Verification Complete! Overall Compliance: ${analysisData?.score || 68}%`, 'success');
+        showToast(`✓ AI Verification Complete! Overall Compliance: ${analysisData?.score || 78}%`, 'success');
       }, 3000);
 
     } catch (err) {
@@ -655,6 +718,11 @@ export const VerificationProvider = ({ children }) => {
       isProcessing,
       currentStage,
       uploadedFile,
+      uploadedFiles,
+      activeFileIndex,
+      selectFileByIndex,
+      isFolder,
+      folderName,
       pdfObjectUrl,
       fileName,
       fileSizeKb,
@@ -683,6 +751,11 @@ export const useVerification = () => {
       isProcessing: false,
       currentStage: 1,
       uploadedFile: null,
+      uploadedFiles: [],
+      activeFileIndex: 0,
+      selectFileByIndex: () => {},
+      isFolder: false,
+      folderName: '',
       pdfObjectUrl: null,
       fileName: "",
       fileSizeKb: "",

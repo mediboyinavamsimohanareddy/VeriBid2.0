@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, FileCheck, AlertTriangle, FileX, Loader2, X, ShieldAlert, ArrowRight, Info } from 'lucide-react';
-import { fetchDemoCases, processDemoCase } from '../services/api';
+import { Sparkles, FileCheck, AlertTriangle, FileX, Loader2, X, ShieldAlert, ArrowRight, Info, Folder } from 'lucide-react';
+import { fetchDemoCases, processDemoCase, fetchDemoCaseFiles } from '../services/api';
 import { useVerification } from '../context/VerificationContext';
 import { useToast } from '../context/ToastContext';
 
@@ -29,34 +29,42 @@ export default function DemoCasesModal({ isOpen, onClose }) {
     setSelectedCaseId(caseId);
     setLoading(true);
 
-    showToast(`Loading synthetic demo dataset (${caseId}) through AI verification pipeline...`, 'info');
+    showToast(`Loading synthetic sample document folder (${caseId}) into AI verification pipeline...`, 'info');
 
     const result = await processDemoCase(caseId);
+    const folderFilesData = await fetchDemoCaseFiles(caseId);
 
     setLoading(false);
-    showToast(`Synthetic demo case ${caseId} processed successfully!`, 'success');
+    showToast(`Sample document package ${caseId} loaded & processed successfully!`, 'success');
 
-    // Trigger verification workflow in state
-    if (result && result.analysis) {
-      // Fetch demo PDF from demo-data if available
-      try {
-        const aiBase = import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000';
-        const demoPdfRes = await fetch(`${aiBase}/demo-data/${caseId}`);
-        if (demoPdfRes.ok) {
-          const blob = await demoPdfRes.blob();
-          const file = new File([blob], `${caseId}_Package.pdf`, { type: "application/pdf" });
-          startVerificationWorkflow(file, result.analysis);
-          onClose();
-          return;
-        }
-      } catch (e) {
-        console.warn("Could not fetch demo PDF file, using dummy blob", e);
-      }
+    const aiBase = import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000';
 
-      startVerificationWorkflow(
-        new File(["%PDF-1.4 Demonstration PDF Document"], `${caseId}_Package.pdf`, { type: "application/pdf" }),
-        result.analysis
-      );
+    if (folderFilesData && folderFilesData.files && folderFilesData.files.length > 0) {
+      const demoFilesList = folderFilesData.files.map(f => ({
+        name: f.filename,
+        url: `${aiBase}${f.url}`,
+        sizeKb: f.file_size_kb,
+        isImage: f.file_type === 'IMAGE'
+      }));
+
+      startVerificationWorkflow(demoFilesList, result.analysis, caseId, caseId);
+    } else {
+      // Fallback list of document files in demo folder
+      const fallbackFiles = (result.documents_loaded || [
+        "01_Tender_Document.pdf",
+        "02_Bid_Submission.pdf",
+        "03_PAN_Certificate.pdf",
+        "04_GST_Certificate.pdf",
+        "05_Udyam_Certificate.pdf",
+        "06_Financial_Statement.pdf"
+      ]).map(fname => ({
+        name: fname,
+        url: `${aiBase}/demo-data-static/${caseId}/${fname}`,
+        sizeKb: 142.5,
+        isImage: fname.match(/\.(png|jpe?g|webp|tiff|bmp)$/i)
+      }));
+
+      startVerificationWorkflow(fallbackFiles, result.analysis, caseId, caseId);
     }
     
     onClose();

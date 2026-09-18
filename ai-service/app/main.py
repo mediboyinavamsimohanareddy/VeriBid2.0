@@ -28,12 +28,55 @@ if os.path.exists(demo_data_dir):
 def get_demo_pdf(case_id: str):
     from fastapi.responses import FileResponse
     target_folder = os.path.join(demo_data_dir, case_id)
-    if os.path.exists(target_folder):
-        files = [f for f in os.listdir(target_folder) if f.endswith('.pdf')]
+    if not os.path.exists(target_folder):
+        normalized = case_id.lower()
+        if "case_a" in normalized or "consistent" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_A_Consistent")
+        elif "case_b" in normalized or "mismatch" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_B_Mismatch_Review")
+        elif "case_c" in normalized or "incomplete" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_C_Incomplete")
+
+    if os.path.exists(target_folder) and os.path.isdir(target_folder):
+        files = [f for f in sorted(os.listdir(target_folder)) if f.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg'))]
         if files:
             pdf_path = os.path.join(target_folder, files[0])
-            return FileResponse(pdf_path, media_type='application/pdf')
-    raise HTTPException(status_code=404, detail="Demo PDF not found")
+            media_type = 'application/pdf' if pdf_path.endswith('.pdf') else 'image/jpeg'
+            return FileResponse(pdf_path, media_type=media_type)
+    raise HTTPException(status_code=404, detail="Demo document not found")
+
+@app.get("/demo-cases/{case_id}/files")
+def get_demo_case_files(case_id: str):
+    target_folder = os.path.join(demo_data_dir, case_id)
+    if not os.path.exists(target_folder):
+        normalized = case_id.lower()
+        if "case_a" in normalized or "consistent" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_A_Consistent")
+        elif "case_b" in normalized or "mismatch" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_B_Mismatch_Review")
+        elif "case_c" in normalized or "incomplete" in normalized:
+            target_folder = os.path.join(demo_data_dir, "Case_C_Incomplete")
+
+    if os.path.exists(target_folder) and os.path.isdir(target_folder):
+        files_info = []
+        folder_basename = os.path.basename(target_folder)
+        for fname in sorted(os.listdir(target_folder)):
+            fpath = os.path.join(target_folder, fname)
+            if os.path.isfile(fpath):
+                ext = os.path.splitext(fname)[1].lower()
+                files_info.append({
+                    "filename": fname,
+                    "url": f"/demo-data-static/{folder_basename}/{fname}",
+                    "file_size_kb": round(os.path.getsize(fpath) / 1024, 1),
+                    "file_type": "PDF" if ext == ".pdf" else "IMAGE" if ext in ['.png', '.jpg', '.jpeg', '.webp'] else "DOCUMENT"
+                })
+        return {
+            "case_id": case_id,
+            "folder_name": folder_basename,
+            "total_files": len(files_info),
+            "files": files_info
+        }
+    raise HTTPException(status_code=404, detail="Demo folder not found")
 
 # Load .env variables if present
 try:
@@ -140,42 +183,86 @@ async def send_email_report(payload: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze-file")
+@app.post("/analyze-files")
 @app.post("/forensic-analysis")
-async def analyze_file(file: UploadFile = File(...), case_id: str = Form("GEM/2024/9/19102")):
-    content = await file.read()
-    pages_text = []
-    try:
-        import pypdf
-        import io
-        reader = pypdf.PdfReader(io.BytesIO(content))
-        pages_text = [page.extract_text() or "" for page in reader.pages]
-    except Exception as e:
-        print("PyPDF extraction note:", e)
+async def analyze_file(
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    case_id: str = Form("GEM/2024/9/19102"),
+    folder_name: Optional[str] = Form(None)
+):
+    upload_list = []
+    if files and len(files) > 0:
+        upload_list = files
+    elif file is not None:
+        upload_list = [file]
 
-    analysis_res = ComplianceEngine.analyze_pages(
-        pages_text=pages_text,
-        filename=file.filename or "uploaded_bid.pdf",
-        file_bytes=content
+    if not upload_list:
+        raise HTTPException(status_code=400, detail="No files provided for analysis")
+
+    files_data = []
+    for f in upload_list:
+        content = await f.read()
+        fname = f.filename or "uploaded_bid.pdf"
+        ext = os.path.splitext(fname)[1].lower()
+        pages_text = []
+        ftype = "PDF"
+
+        if ext in [".jpg", ".jpeg", ".png", ".webp", ".tiff", ".bmp"]:
+            ftype = "IMAGE"
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(content))
+                pages_text = [f"Image Document: {fname} ({img.width}x{img.height} pixels, format: {img.format})"]
+            except Exception:
+                pages_text = [f"Image Document: {fname}"]
+        else:
+            ftype = "PDF"
+            try:
+                import pypdf, io
+                reader = pypdf.PdfReader(io.BytesIO(content))
+                pages_text = [page.extract_text() or "" for page in reader.pages]
+            except Exception as e:
+                print(f"PyPDF extraction note for {fname}: {e}")
+                pages_text = [f"Document text from {fname}"]
+
+        files_data.append({
+            "filename": fname,
+            "content": content,
+            "file_type": ftype,
+            "pages_text": pages_text
+        })
+
+    analysis_res = ComplianceEngine.analyze_file_batch(
+        files_list=files_data,
+        folder_name=folder_name
     )
 
     session_id = f"sess-{int(time.time()*1000)}"
+    primary_filename = folder_name or files_data[0]["filename"]
+    total_size_kb = round(sum(len(fd["content"]) for fd in files_data) / 1024, 1)
+
     VERIFICATION_SESSIONS[session_id] = {
         "session_id": session_id,
         "case_id": case_id,
-        "filename": file.filename,
-        "file_size_kb": round(len(content)/1024, 1),
+        "filename": primary_filename,
+        "file_size_kb": total_size_kb,
         "created_at": time.time(),
+        "is_folder": analysis_res.get("is_folder", False),
+        "document_count": len(files_data),
         "analysis": analysis_res
     }
 
-    # Converged standardized JSON response payload format
     return {
         "session_id": session_id,
-        "filename": file.filename,
-        "file_size_kb": round(len(content)/1024, 1),
-        "status": "Document Uploaded & Forensic Analysis Completed",
-        
-        # Standardized ML output fields matching user specification
+        "filename": primary_filename,
+        "file_size_kb": total_size_kb,
+        "is_folder": analysis_res.get("is_folder", False),
+        "folder_name": analysis_res.get("folder_name"),
+        "document_count": len(files_data),
+        "documents_analyzed": analysis_res.get("documents_analyzed", []),
+        "status": "Document / Folder Uploaded & Forensic Analysis Completed",
         "bidder_id": analysis_res.get("bidder_id", "BIDDER_ABC_102"),
         "overall_compliance_score": analysis_res.get("overall_compliance_score", 87),
         "risk_level": analysis_res.get("risk_level", "High"),
@@ -185,8 +272,6 @@ async def analyze_file(file: UploadFile = File(...), case_id: str = Form("GEM/20
         "forgery_analysis": analysis_res.get("forgery_analysis", {}),
         "findings": analysis_res.get("findings", []),
         "human_review_required": analysis_res.get("human_review_required", True),
-
-        # Preserved legacy analysis payload for UI backwards compatibility
         "analysis": analysis_res
     }
 
